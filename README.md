@@ -110,7 +110,7 @@ To stop the server, press `Ctrl+C` in your terminal.
 
 ## Contributing
 
-Feel free to open issues or submit pull requests on the [GitHub repository](https://www.google.com/search?q=https://github.com/fm-anderson/local_server) (assuming you'll host it there).
+Feel free to open issues [here](https://github.com/fm-anderson/local_server/issues) or submit pull requests on this [repository](https://github.com/fm-anderson/local_server).
 
 ## License
 
