@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Local Server</title>
+  </head>
+  <body>
+    <h1>Shared Files</h1>
+    <p><a href="/">Home</a></p>
+
+    <ul>
+      {% for entry in entries %}
+      <li>
+        {% if entry.is_clickable %}
+        <a href="{{ entry.href }}">{{ entry.name }}</a>
+        {% else %} {{ entry.name }} {% endif %}
+        <small>({{ entry.kind }})</small>
+      </li>
+      {% endfor %}
+    </ul>
+  </body>
+</html>
