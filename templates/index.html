@@ -1,6 +1,42 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 720px;
+        margin: 40px auto;
+        padding: 0 20px;
+        color: #222;
+      }
+
+      ul {
+        list-style: none;
+        padding: 0;
+      }
+
+      li {
+        padding: 12px 0;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      a {
+        color: #1463a0;
+        text-decoration: none;
+        overflow-wrap: anywhere;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      small {
+        color: #777;
+      }
+    </style>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Local Server</title>
@@ -8,6 +44,9 @@
   <body>
     <h1>Shared Files</h1>
     <p><a href="/">Home</a></p>
+    {% if let Some(href) = parent_href %}
+    <p><a href="{{ href }}">← Parent Directory</a></p>
+    {% endif %}
 
     <ul>
       {% for entry in entries %}
