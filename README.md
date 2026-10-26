@@ -1,116 +1,189 @@
-# `local_server`
+# Local Server
 
-A lightweight, zero-configuration HTTP server written in Ruby to share files from your computer to any device on your local network. It provides a clean, mobile-friendly web interface and a QR code for instant access.
+A lightweight HTTP file-sharing server written in **Rust**, built with Axum and Tokio.
+
+Browse directories and download files through a web browser. Share files with other devices on your local network using an optional QR code.
 
 ## Features
 
-- **Cross-Platform**: Works on any system with Ruby installed (macOS, Linux, Windows).
-- **QR Code Support**: Generate a QR code for easy access to the server URL on mobile devices.
-- **Configurable:** Use command-line flags to change the port, show the QR code, or get help.
-- **Flexible:** Serve files from any directory on your computer.
+- **Directory browsing:** Navigate folders through a responsive HTML interface.
+- **File downloads:** Download files of any type, with streaming support for large files.
+- **Configurable directory:** Share any directory, with shortcuts for common locations.
+- **Configurable port:** Change the server's listening port using `-p` or `--port`.
+- **LAN access:** Optionally share files with other devices on your network.
+- **QR codes:** Generate a terminal QR code for quick access from your phone.
+- **Path validation:** Restricts file access to the selected directory, with basic protections against directory traversal.
+- **Graceful shutdown:** Stop the server using `Ctrl+C`.
 
 ## Requirements
 
-- Ruby (tested with Ruby 2.x and 3.x)
-- `webrick` (usually included with Ruby)
-- `rqrcode-core` gem: This gem is required for the QR code functionality. If you use the `-qr` option and encounter an error, you may need to install it:
-  ```bash
-  gem install rqrcode
-  ```
+- Rust and Cargo
+- macOS or Linux
 
 ## Installation
 
-Since `local_server` is a Ruby script, you'll need a Ruby environment set up. Most macOS and Linux distributions come with Ruby pre-installed.
+Clone the repository:
 
-1.  **Save the script**: Save the provided Ruby code into a file named `local_server.rb` (or any other name you prefer).
+```bash
+git clone https://github.com/fm-anderson/local_server.git
+cd local_server
+```
 
-2.  **Make it executable**:
+Build the optimized executable:
 
-    ```bash
-    chmod +x local_server.rb
-    ```
+```bash
+cargo build --release
+```
 
-3.  **Move to your PATH**: For easy execution from any directory, move the script to a directory included in your system's `PATH` (e.g., `/usr/local/bin` or `~/bin`).
+The executable will be available at:
 
-    ```bash
-    mv local_server.rb /usr/local/bin/
-    ```
+```text
+target/release/local_server_rs
+```
 
-    If `/usr/local/bin` requires superuser permissions, you might need to use `sudo`:
-
-    ```bash
-    sudo mv local_server.rb /usr/local/bin/
-    ```
+You can also run the application during development using `cargo run`.
 
 ## Usage
 
-Once installed, you can run `local_server.rb` directly from your terminal.
-
-### Basic Usage
-
-To serve files from your current directory:
+### Start the server
 
 ```bash
-local_server.rb
+./target/release/local_server_rs
 ```
 
-This will start the server on port `8000` (by default) and display the local URL.
+By default, the server:
 
-### Serving a Specific Directory
+- Shares `~/Desktop/local_server`.
+- Listens on `127.0.0.1:8000`.
+- Accepts connections only from your computer.
 
-To serve files from a different directory (e.g., your `Downloads` folder):
+The shared directory must already exist.
+
+Open `http://127.0.0.1:8000` in your browser.
+
+### Share a different directory
+
+Use the `Downloads` shortcut:
 
 ```bash
-local_server.rb ~/Downloads
+./target/release/local_server_rs Downloads
 ```
 
-### Specifying a Port
+This shares `~/Downloads`.
 
-To run the server on a different port (e.g., `3000`):
+You can also provide an absolute or relative path:
 
 ```bash
-local_server.rb -p 3000
+./target/release/local_server_rs ~/Documents
+./target/release/local_server_rs /tmp/shared
+./target/release/local_server_rs ./photos
 ```
 
-### Displaying a QR Code
+Other relative paths are resolved from the current working directory.
 
-To get a QR code for the server URL, which is handy for quickly accessing it on your phone:
+### Change the port
+
+The default port is `8000`.
 
 ```bash
-local_server.rb -qr
+./target/release/local_server_rs --port 3000
 ```
 
-You can combine options:
+Or use the short option:
 
 ```bash
-local_server.rb ~/Pictures -p 8080 -qr
+./target/release/local_server_rs -p 3000
 ```
 
-### Stopping the Server
+### Share files over your local network
 
-To stop the server, press `Ctrl+C` in your terminal.
+```bash
+./target/release/local_server_rs Downloads --lan
+```
 
-## Examples
+The `--lan` flag binds the server to all available IPv4 network interfaces.
 
-- **Sharing a photo album with your phone**:
+Find your Mac's local IP address:
 
-  ```bash
-  local_server ~/Photos/Vacation2024 -qr
-  ```
+```bash
+ipconfig getifaddr en0
+```
 
-  Scan the QR code with your phone's camera, and you'll be able to browse and download your photos.
+On another device connected to the same network, open:
 
-- **Quickly transfer a document to another computer on your network**:
+```text
+http://YOUR_LOCAL_IP:8000
+```
 
-  ```bash
-  local_server ~/Documents
-  ```
+### Display a QR code
 
-  Then, on the other computer, open a web browser and navigate to the IP address and port displayed in your terminal (e.g., `http://192.168.1.100:8000`).
+To share files with your phone without manually entering the URL:
 
-## Contributing
+```bash
+./target/release/local_server_rs Downloads --lan --qr
+```
 
-Feel free to open issues or submit pull requests on the [GitHub repository](https://www.google.com/search?q=https://github.com/fm-anderson/local_server) (assuming you'll host it there).
+The server prints a local URL and a QR code in the terminal.
+
+Scan the QR code with your phone's camera.
+
+**Note:** `--qr` requires `--lan`.
+
+### Show available options
+
+```bash
+./target/release/local_server_rs --help
+```
+
+Check the application version:
+
+```bash
+./target/release/local_server_rs --version
+```
+
+### Stop the server
+
+Press `Ctrl+C`.
+
+The server initiates a graceful shutdown, allowing active requests to finish.
+
+## Security
+
+Local Server is intended for personal use and trusted environments.
+
+- LAN access is disabled by default.
+- There is **no authentication or HTTPS**.
+- Hidden files and directories are not exposed through the browser.
+- Symbolic links are displayed but are not clickable.
+- File paths are validated to prevent basic directory traversal and access outside the shared root.
+
+Filesystem path validation does not eliminate every race condition involving concurrent file or symlink changes.
+
+**Only enable `--lan` on trusted networks and share directories that do not contain sensitive files.** Binding to all interfaces can expose the server beyond your immediate LAN, depending on your network configuration.
+
+## Project Structure
+
+```text
+local_server/
+├── src/
+│   └── main.rs         # CLI, HTTP handlers, and tests
+├── templates/
+│   └── index.html      # Askama HTML template
+├── Cargo.toml          # Rust dependencies and configuration
+├── Cargo.lock          # Locked dependency versions
+└── README.md
+```
+
+The HTML interface uses Askama templates, which are compiled into the executable.
+
+## Technology
+
+- **Rust** — Application language
+- **Axum** — HTTP routing and responses
+- **Tokio** — Asynchronous runtime
+- **Clap** — Command-line argument parsing
+- **Askama** — HTML templates
+- **qrcode** — Terminal QR code generation
 
 ## License
 
