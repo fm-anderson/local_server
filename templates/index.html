@@ -36,6 +36,37 @@
       small {
         color: #777;
       }
+
+      .upload-form {
+        margin: 20px 0;
+        padding: 16px;
+        background: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .upload-form input[type="file"] {
+        flex: 1 1 200px;
+        max-width: 100%;
+      }
+
+      .upload-form button {
+        padding: 8px 16px;
+        background: #1463a0;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        font-size: 1rem;
+        cursor: pointer;
+      }
+
+      .upload-form button:hover {
+        background: #0f4c7a;
+      }
     </style>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -47,6 +78,16 @@
     {% if let Some(href) = parent_href %}
     <p><a href="{{ href }}">← Parent Directory</a></p>
     {% endif %}
+
+    <form
+      class="upload-form"
+      action="{{ upload_action }}"
+      method="post"
+      enctype="multipart/form-data"
+    >
+      <input type="file" name="file" multiple required />
+      <button type="submit">Upload</button>
+    </form>
 
     <ul>
       {% for entry in entries %}

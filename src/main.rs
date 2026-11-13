@@ -2,10 +2,10 @@ use askama::Template;
 use axum::{
     Router,
     body::Body,
-    extract::{Path, State},
+    extract::{DefaultBodyLimit, Multipart, Path, State},
     http::{StatusCode, header},
-    response::{Html, IntoResponse},
-    routing::get,
+    response::{Html, IntoResponse, Redirect},
+    routing::{get, post},
 };
 use clap::Parser;
 use local_ip_address::local_ip;
@@ -13,6 +13,7 @@ use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use qrcode::{QrCode, render::unicode};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
 
 #[derive(Parser, Debug)]
@@ -47,6 +48,7 @@ struct FileEntry {
 struct IndexTemplate {
     entries: Vec<FileEntry>,
     parent_href: Option<String>,
+    upload_action: String,
 }
 
 fn is_valid_relative_path(path: &str) -> bool {
@@ -54,6 +56,58 @@ fn is_valid_relative_path(path: &str) -> bool {
         && path
             .split('/')
             .all(|part| !part.is_empty() && !part.starts_with('.'))
+}
+
+fn is_valid_filename(name: &str) -> bool {
+    !name.contains('/') && is_valid_relative_path(name)
+}
+
+fn encode_path(path: &str) -> String {
+    path.split('/')
+        .filter(|part| !part.is_empty())
+        .map(|part| utf8_percent_encode(part, NON_ALPHANUMERIC).to_string())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn candidate_filename(filename: &str, attempt: usize) -> String {
+    if attempt == 0 {
+        return filename.to_string();
+    }
+
+    let path = std::path::Path::new(filename);
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(filename);
+
+    match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) => format!("{stem}_{attempt}.{ext}"),
+        None => format!("{stem}_{attempt}"),
+    }
+}
+
+async fn create_unique_file(
+    directory: &std::path::Path,
+    filename: &str,
+) -> std::io::Result<(tokio::fs::File, PathBuf)> {
+    for attempt in 0.. {
+        let candidate = candidate_filename(filename, attempt);
+        let path = directory.join(candidate);
+
+        match tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .await
+        {
+            Ok(file) => return Ok((file, path)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+
+    unreachable!()
 }
 
 async fn file_info(
@@ -180,27 +234,95 @@ async fn list_files(
         let parent = relative.rsplit_once('/').map(|(path, _)| path);
 
         Some(match parent {
-            Some(path) => {
-                let encoded = path
-                    .split('/')
-                    .map(|part| utf8_percent_encode(part, NON_ALPHANUMERIC).to_string())
-                    .collect::<Vec<_>>()
-                    .join("/");
-
-                format!("/browse/{encoded}")
-            }
+            Some(path) => format!("/browse/{}", encode_path(path)),
             None => "/".to_string(),
         })
+    };
+
+    let upload_action = if relative.is_empty() {
+        "/upload".to_string()
+    } else {
+        format!("/upload/{}", encode_path(&relative))
     };
 
     let html = IndexTemplate {
         entries,
         parent_href,
+        upload_action,
     }
     .render()
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Html(html))
+}
+
+async fn upload_files(
+    State(root): State<PathBuf>,
+    directory: Option<Path<String>>,
+    mut multipart: Multipart,
+) -> Result<Redirect, StatusCode> {
+    let relative = directory.map(|Path(value)| value).unwrap_or_default();
+
+    if !relative.is_empty() && !is_valid_relative_path(&relative) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let current = tokio::fs::canonicalize(root.join(&relative))
+        .await
+        .map_err(io_error_to_status)?;
+
+    if !current.starts_with(&root) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    if !current.is_dir() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    while let Some(mut field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?
+    {
+        let Some(filename) = field.file_name().map(str::to_string) else {
+            continue;
+        };
+
+        if filename.is_empty() {
+            continue;
+        }
+
+        if !is_valid_filename(&filename) {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+
+        let (mut file, file_path) = create_unique_file(&current, &filename)
+            .await
+            .map_err(io_error_to_status)?;
+
+        let write_result: Result<(), StatusCode> = async {
+            while let Some(chunk) = field.chunk().await.map_err(|_| StatusCode::BAD_REQUEST)? {
+                file.write_all(&chunk).await.map_err(io_error_to_status)?;
+            }
+            file.flush().await.map_err(io_error_to_status)?;
+            Ok(())
+        }
+        .await;
+
+        if let Err(status) = write_result {
+            drop(file);
+            let _ = tokio::fs::remove_file(&file_path).await;
+            return Err(status);
+        }
+    }
+
+    let redirect_target = if relative.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/browse/{}", encode_path(&relative))
+    };
+
+    Ok(Redirect::to(&redirect_target))
 }
 
 async fn shutdown_signal() {
@@ -252,6 +374,9 @@ async fn main() -> std::io::Result<()> {
         .route("/", get(list_files))
         .route("/files/{*filename}", get(file_info))
         .route("/browse/{*directory}", get(list_files))
+        .route("/upload", post(upload_files))
+        .route("/upload/{*directory}", post(upload_files))
+        .layer(DefaultBodyLimit::disable())
         .with_state(root);
 
     let ip = if cli.lan {
@@ -369,6 +494,53 @@ mod tests {
             let result = file_info(State(root), Path("secret-link.txt".to_string())).await;
             assert_eq!(result.err(), Some(StatusCode::FORBIDDEN));
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_filename_validation() {
+        let valid = ["hello.txt", "photo 1.jpg", "archive.tar.gz", "README"];
+        let invalid = [
+            "",
+            ".",
+            "..",
+            ".hidden",
+            "folder/file.txt",
+            r"folder\file.txt",
+            "../secret.txt",
+        ];
+
+        for name in valid {
+            assert!(is_valid_filename(name), "Should accept: {name}");
+        }
+        for name in invalid {
+            assert!(!is_valid_filename(name), "Should reject: {name}");
+        }
+    }
+
+    #[test]
+    fn test_candidate_filename() {
+        assert_eq!(candidate_filename("photo.jpg", 0), "photo.jpg");
+        assert_eq!(candidate_filename("photo.jpg", 1), "photo_1.jpg");
+        assert_eq!(candidate_filename("photo.jpg", 2), "photo_2.jpg");
+        assert_eq!(candidate_filename("README", 1), "README_1");
+        assert_eq!(candidate_filename("archive.tar.gz", 1), "archive.tar_1.gz");
+    }
+
+    #[tokio::test]
+    async fn test_create_unique_file_auto_rename() -> std::io::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let dir = temp.path();
+
+        let (_, first) = create_unique_file(dir, "photo.jpg").await?;
+        assert_eq!(first.file_name().unwrap(), "photo.jpg");
+
+        let (_, second) = create_unique_file(dir, "photo.jpg").await?;
+        assert_eq!(second.file_name().unwrap(), "photo_1.jpg");
+
+        let (_, third) = create_unique_file(dir, "photo.jpg").await?;
+        assert_eq!(third.file_name().unwrap(), "photo_2.jpg");
 
         Ok(())
     }
