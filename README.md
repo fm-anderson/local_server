@@ -2,12 +2,13 @@
 
 A lightweight HTTP file-sharing server written in **Rust**, built with Axum and Tokio.
 
-Browse directories and download files through a web browser. Share files with other devices on your local network using an optional QR code.
+Browse directories, download files, and upload files through a web browser. Share files with other devices on your local network using an optional QR code.
 
 ## Features
 
 - **Directory browsing:** Navigate folders through a responsive HTML interface.
 - **File downloads:** Download files of any type, with streaming support for large files.
+- **File uploads:** Upload single or multiple files directly into the currently browsed directory, with automatic renaming if a file already exists.
 - **Configurable directory:** Share any directory, with shortcuts for common locations.
 - **Configurable port:** Change the server's listening port using `-p` or `--port`.
 - **LAN access:** Optionally share files with other devices on your network.
@@ -166,7 +167,10 @@ Filesystem path validation does not eliminate every race condition involving con
 ```text
 local_server/
 ├── src/
-│   └── main.rs         # CLI, HTTP handlers, and tests
+│   ├── main.rs         # Server startup, router setup, and QR code
+│   ├── cli.rs          # CLI argument parsing and directory resolution
+│   ├── handlers.rs     # HTTP route handlers and HTML template structs
+│   └── paths.rs        # Path validation, URL encoding, and file utilities
 ├── templates/
 │   └── index.html      # Askama HTML template
 ├── Cargo.toml          # Rust dependencies and configuration
